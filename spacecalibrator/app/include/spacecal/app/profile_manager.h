@@ -2,6 +2,7 @@
 
 #include <spacecal/core/types.h>
 #include <spacecal/core/result.h>
+#include <spacecal/core/calibration_policy.h>
 #include <spacecal/platform/config_store.h>
 #include <spacecal/platform/vr_runtime.h>
 

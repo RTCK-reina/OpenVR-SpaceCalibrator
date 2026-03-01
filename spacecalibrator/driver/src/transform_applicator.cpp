@@ -82,7 +82,7 @@ TransformApplicator::DeltaSize TransformApplicator::evaluateDeltaSize(
     const auto srcPose = src * deviceWorldPose;
     const auto targetPose = target * deviceWorldPose;
 
-    const auto transDelta = (srcPose.translation - targetPose.translation).squaredNorm();
+    const auto transDelta = (srcPose.translation - targetPose.translation).norm();
     const auto rotDelta = srcPose.rotation.angularDistance(targetPose.rotation);
 
     DeltaSize transLevel, rotLevel;
