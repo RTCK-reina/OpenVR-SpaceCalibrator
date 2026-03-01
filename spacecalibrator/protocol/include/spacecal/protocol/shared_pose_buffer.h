@@ -89,9 +89,9 @@ public:
         auto* layout = static_cast<SharedPoseBufferLayout*>(shmem_.data());
         if (!layout) return;
 
-        uint64_t curIndex = layout->writeIndex.load(std::memory_order_relaxed) + 1;
+        uint64_t curIndex = layout->writeIndex.load(std::memory_order_relaxed);
         layout->poses[curIndex % SharedPoseBufferLayout::kBufferCapacity] = pose;
-        layout->writeIndex.store(curIndex, std::memory_order_release);
+        layout->writeIndex.store(curIndex + 1, std::memory_order_release);
     }
 
 private:

@@ -7,6 +7,12 @@ PoseAverager::PoseAverager(size_t n_samples) {
 }
 
 Eigen::AffineCompact3d PoseAverager::average() const {
+    if (count_ == 0) {
+        Eigen::AffineCompact3d identity;
+        identity.setIdentity();
+        return identity;
+    }
+
     // https://stackoverflow.com/a/27410865/36723
     auto quatT = quatCols_.transpose();
     Eigen::Matrix4d quatMul = quatCols_ * quatT;

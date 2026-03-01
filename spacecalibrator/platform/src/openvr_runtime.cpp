@@ -159,7 +159,7 @@ ChaperoneData OpenVRRuntime::getChaperoneData()
 
     // Geometry (collision bounds quads)
     uint32_t quadCount = 0;
-    setup->GetWorkingCollisionBoundsTagsInfo(nullptr, &quadCount);
+    setup->GetWorkingCollisionBoundsInfo(nullptr, &quadCount);
     if (quadCount > 0) {
         // Each quad: 4 corners × 3 floats
         result.geometryData.resize(quadCount * 4 * 3);
