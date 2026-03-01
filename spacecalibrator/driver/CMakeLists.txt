@@ -1,6 +1,7 @@
 # Driver component
 add_library(spacecal_driver
     src/transform_applicator.cpp
+    src/stub_pose_interceptor.cpp
 )
 
 target_include_directories(spacecal_driver
