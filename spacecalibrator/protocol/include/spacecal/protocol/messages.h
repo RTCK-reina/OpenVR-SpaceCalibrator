@@ -7,13 +7,14 @@ namespace spacecal::protocol {
 
 /// Message types sent from client to driver.
 enum class MessageType : uint32_t {
-    Invalid         = 0,
-    Handshake       = 1,
-    SetTransform    = 2,
-    SetSpeedParams  = 3,
-    DebugOffset     = 4,
-    Heartbeat       = 5,
-    GetStatus       = 6,
+    Invalid            = 0,
+    Handshake          = 1,
+    SetTransform       = 2,
+    SetSpeedParams     = 3,
+    DebugOffset        = 4,
+    Heartbeat          = 5,
+    GetStatus          = 6,
+    SetBatchTransforms = 7,  // C.1: batch of transforms in single message
 };
 
 /// Response codes from driver to client.
@@ -75,6 +76,13 @@ struct HandshakePayload {
 struct ResponsePayload {
     ResponseCode code = ResponseCode::Invalid;
     uint32_t version = kCurrentVersion;
+};
+
+/// C.1: Batch transform payload for sending multiple device transforms in one message.
+struct BatchTransformPayload {
+    uint32_t count = 0;
+    static constexpr uint32_t kMaxDevices = 16;
+    TransformPayload transforms[kMaxDevices];
 };
 
 // ============================================================================

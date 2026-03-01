@@ -78,7 +78,7 @@ void CalibrationOrchestrator::onPoseReceived(
         return;
     }
 
-    solver_->pushSample(Sample(refPose, targetPose));
+    solver_->pushSample(Sample(refPose, targetPose, timeLastTick_));
 
     size_t target = sampleCountForSpeed(speed_);
     if (eventBus_) {
@@ -89,7 +89,7 @@ void CalibrationOrchestrator::onPoseReceived(
 }
 
 void CalibrationOrchestrator::tick(double currentTime) {
-    if ((currentTime - timeLastTick_) < 0.05)
+    if ((currentTime - timeLastTick_) < params_.tickIntervalSeconds)
         return;
     timeLastTick_ = currentTime;
 

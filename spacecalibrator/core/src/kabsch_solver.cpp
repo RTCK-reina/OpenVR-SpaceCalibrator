@@ -5,14 +5,22 @@
  * Win32 APIs, and global metrics have been removed. Diagnostic output is returned
  * via CalibrationOutcome::diagnosticMessages instead of CalCtx.Log().
  *
- * The duplicated quaternion helpers (previously in Calibration.cpp,
- * CalibrationCalc.cpp, and ServerTrackedDeviceProvider.cpp) are replaced by
- * direct use of Eigen's Quaterniond.
+ * Improvements over original:
+ * - A.1: Temporal weighting (exponential decay) for delta pairs
+ * - A.2: MAD-based outlier rejection
+ * - A.3: Rotational error metric
+ * - A.4: Hysteresis for calibration update decision
+ * - A.5: Tuned thresholds
+ * - B.1: Pre-allocated delta vectors
+ * - B.2: Cached rotated samples in calibrateTranslation
+ * - B.3: Outer-product covariance in computeAxisVariance
+ * - B.4: O(n*k) sliding window delta pairs
  */
 
 #include <spacecal/core/calibration_solver.h>
 #include <spacecal/core/pose_averager.h>
 
+#include <algorithm>
 #include <sstream>
 #include <cmath>
 
@@ -23,6 +31,7 @@ namespace {
 struct DSample {
     bool valid;
     Eigen::Vector3d ref, target;
+    double weight;  // temporal weight for weighted Kabsch
 };
 
 Eigen::Vector3d axisFromRotationMatrix3(const Eigen::Matrix3d& rot) {
@@ -34,7 +43,8 @@ Eigen::Vector3d axisFromRotationMatrix3(const Eigen::Matrix3d& rot) {
 }
 
 double angleFromRotationMatrix3(const Eigen::Matrix3d& rot) {
-    return acos((rot(0, 0) + rot(1, 1) + rot(2, 2) - 1.0) / 2.0);
+    double trace = rot(0, 0) + rot(1, 1) + rot(2, 2);
+    return acos(std::clamp((trace - 1.0) / 2.0, -1.0, 1.0));
 }
 
 Eigen::Quaterniond eulerDegreesToQuat(const Eigen::Vector3d& eulerdeg) {
@@ -45,17 +55,14 @@ Eigen::Quaterniond eulerDegreesToQuat(const Eigen::Vector3d& eulerdeg) {
 }
 
 DSample deltaRotationSamples(const Sample& s1, const Sample& s2) {
-    // Difference in rotation between samples.
     auto dref = s1.ref.rot * s2.ref.rot.transpose();
     auto dtarget = s1.target.rot * s2.target.rot.transpose();
 
-    // When stuck together, the two tracked objects rotate as a pair,
-    // therefore their axes of rotation must be equal between any given pair of samples.
     DSample ds;
     ds.ref = axisFromRotationMatrix3(dref);
     ds.target = axisFromRotationMatrix3(dtarget);
+    ds.weight = 1.0;
 
-    // Reject samples that were too close to each other.
     auto refA = angleFromRotationMatrix3(dref);
     auto targetA = angleFromRotationMatrix3(dtarget);
     ds.valid = refA > 0.4 && targetA > 0.4 && ds.ref.norm() > 0.01 && ds.target.norm() > 0.01;
@@ -72,6 +79,15 @@ Pose applyTransform(const Pose& originalPose, const Eigen::AffineCompact3d& tran
     return pose;
 }
 
+/// Compute temporal weight for a sample pair based on exponential decay.
+double temporalWeight(double t_i, double t_j, double now, double halfLife) {
+    if (halfLife <= 0 || now <= 0) return 1.0;
+    double oldest = std::min(t_i, t_j);
+    double age = now - oldest;
+    if (age < 0) age = 0;
+    return exp(-log(2.0) * age / halfLife);
+}
+
 } // anonymous namespace
 
 
@@ -82,6 +98,7 @@ KabschCalibrationSolver::KabschCalibrationSolver()
     , oldCalRMS_(0)
     , axisVariance_(0)
     , calcCycle_(0)
+    , consecutiveBetterCount_(0)
 {
     estimatedTransformation_.setIdentity();
     posOffset_.setZero();
@@ -96,6 +113,7 @@ void KabschCalibrationSolver::clear() {
     isValid_ = false;
     samples_.clear();
     currentResult_ = CalibrationResult();
+    consecutiveBetterCount_ = 0;
 }
 
 size_t KabschCalibrationSolver::sampleCount() const {
@@ -127,38 +145,63 @@ Eigen::Vector3d KabschCalibrationSolver::currentEulerRotation() const {
 
 
 // ============================================================================
-// Kabsch SVD rotation calibration
+// Kabsch SVD rotation calibration (A.1 temporal weighting, B.1 pre-alloc, B.4 sliding window)
 // ============================================================================
 
 Eigen::Vector3d KabschCalibrationSolver::calibrateRotation() const {
-    std::vector<DSample> deltas;
+    const size_t n = samples_.size();
+    const size_t k = activeParams_.slidingWindowK;
+    const double halfLife = activeParams_.temporalDecayHalfLife;
+    const double now = samples_.empty() ? 0.0 : samples_.back().timestamp;
 
-    for (size_t i = 0; i < samples_.size(); i++) {
-        for (size_t j = 0; j < i; j++) {
+    // B.1: pre-allocate
+    size_t maxPairs = (k > 0 && k < n)
+        ? n * k  // upper bound for sliding window
+        : n * (n - 1) / 2;
+    std::vector<DSample> deltas;
+    deltas.reserve(maxPairs);
+
+    for (size_t i = 0; i < n; i++) {
+        // B.4: sliding window — pair with K nearest temporal neighbors
+        size_t jStart = (k > 0 && k < n && i > k) ? (i - k) : 0;
+        for (size_t j = jStart; j < i; j++) {
             auto delta = deltaRotationSamples(samples_[i], samples_[j]);
-            if (delta.valid)
+            if (delta.valid) {
+                // A.1: temporal weight
+                delta.weight = temporalWeight(
+                    samples_[i].timestamp, samples_[j].timestamp, now, halfLife);
                 deltas.push_back(delta);
+            }
         }
     }
 
-    // Kabsch algorithm
-    Eigen::MatrixXd refPoints(deltas.size(), 3), targetPoints(deltas.size(), 3);
-    Eigen::Vector3d refCentroid(0, 0, 0), targetCentroid(0, 0, 0);
-
-    for (size_t i = 0; i < deltas.size(); i++) {
-        refPoints.row(i) = deltas[i].ref;
-        refCentroid += deltas[i].ref;
-
-        targetPoints.row(i) = deltas[i].target;
-        targetCentroid += deltas[i].target;
+    if (deltas.empty()) {
+        return Eigen::Vector3d::Zero();
     }
 
-    refCentroid /= (double)deltas.size();
-    targetCentroid /= (double)deltas.size();
+    // Weighted Kabsch algorithm
+    Eigen::MatrixXd refPoints(deltas.size(), 3), targetPoints(deltas.size(), 3);
+    Eigen::Vector3d refCentroid = Eigen::Vector3d::Zero();
+    Eigen::Vector3d targetCentroid = Eigen::Vector3d::Zero();
+    double totalWeight = 0;
 
     for (size_t i = 0; i < deltas.size(); i++) {
-        refPoints.row(i) -= refCentroid;
-        targetPoints.row(i) -= targetCentroid;
+        double w = deltas[i].weight;
+        refCentroid += deltas[i].ref * w;
+        targetCentroid += deltas[i].target * w;
+        totalWeight += w;
+    }
+
+    if (totalWeight > 0) {
+        refCentroid /= totalWeight;
+        targetCentroid /= totalWeight;
+    }
+
+    // Apply sqrt(weight) scaling for weighted least-squares
+    for (size_t i = 0; i < deltas.size(); i++) {
+        double sw = sqrt(deltas[i].weight);
+        refPoints.row(i) = (deltas[i].ref - refCentroid) * sw;
+        targetPoints.row(i) = (deltas[i].target - targetCentroid) * sw;
     }
 
     auto crossCV = refPoints.transpose() * targetPoints;
@@ -180,43 +223,78 @@ Eigen::Vector3d KabschCalibrationSolver::calibrateRotation() const {
 
 
 // ============================================================================
-// Least-squares translation calibration
+// Least-squares translation calibration (A.1 temporal, B.1 pre-alloc, B.2 cache, B.4 window)
 // ============================================================================
 
 Eigen::Vector3d KabschCalibrationSolver::calibrateTranslation(const Eigen::Matrix3d& rotation) const {
-    std::vector<std::pair<Eigen::Vector3d, Eigen::Matrix3d>> deltas;
+    const size_t n = samples_.size();
+    const size_t k = activeParams_.slidingWindowK;
+    const double halfLife = activeParams_.temporalDecayHalfLife;
+    const double now = samples_.empty() ? 0.0 : samples_.back().timestamp;
 
-    for (size_t i = 0; i < samples_.size(); i++) {
-        Sample s_i = samples_[i];
-        s_i.target.rot = rotation * s_i.target.rot;
-        s_i.target.trans = rotation * s_i.target.trans;
+    // B.2: pre-compute rotated samples in O(n)
+    struct RotatedSample {
+        Eigen::Matrix3d refRotT;
+        Eigen::Matrix3d targetRotT;
+        Eigen::Vector3d refTrans;
+        Eigen::Vector3d targetTrans;
+    };
+    std::vector<RotatedSample> rotated(n);
+    for (size_t i = 0; i < n; i++) {
+        const auto& s = samples_[i];
+        rotated[i].refRotT = s.ref.rot.transpose();
+        rotated[i].targetRotT = (rotation * s.target.rot).transpose();
+        rotated[i].refTrans = s.ref.trans;
+        rotated[i].targetTrans = rotation * s.target.trans;
+    }
 
-        for (size_t j = 0; j < i; j++) {
-            Sample s_j = samples_[j];
-            s_j.target.rot = rotation * s_j.target.rot;
-            s_j.target.trans = rotation * s_j.target.trans;
+    // B.1: pre-allocate
+    size_t maxPairs = (k > 0 && k < n)
+        ? n * k * 2
+        : n * (n - 1);
+    // Each pair generates 2 equations (A and B), each with 3 rows
+    std::vector<Eigen::Vector3d> constants_vec;
+    std::vector<Eigen::Matrix3d> coefficients_vec;
+    std::vector<double> weights_vec;
+    constants_vec.reserve(maxPairs);
+    coefficients_vec.reserve(maxPairs);
+    weights_vec.reserve(maxPairs);
 
-            auto QAi = s_i.ref.rot.transpose();
-            auto QAj = s_j.ref.rot.transpose();
-            auto dQA = QAj - QAi;
-            auto CA = QAj * (s_j.ref.trans - s_j.target.trans) - QAi * (s_i.ref.trans - s_i.target.trans);
-            deltas.push_back(std::make_pair(CA, dQA));
+    for (size_t i = 0; i < n; i++) {
+        size_t jStart = (k > 0 && k < n && i > k) ? (i - k) : 0;
+        for (size_t j = jStart; j < i; j++) {
+            double w = temporalWeight(
+                samples_[i].timestamp, samples_[j].timestamp, now, halfLife);
 
-            auto QBi = s_i.target.rot.transpose();
-            auto QBj = s_j.target.rot.transpose();
-            auto dQB = QBj - QBi;
-            auto CB = QBj * (s_j.ref.trans - s_j.target.trans) - QBi * (s_i.ref.trans - s_i.target.trans);
-            deltas.push_back(std::make_pair(CB, dQB));
+            auto dQA = rotated[j].refRotT - rotated[i].refRotT;
+            auto CA = rotated[j].refRotT * (rotated[j].refTrans - rotated[j].targetTrans)
+                     - rotated[i].refRotT * (rotated[i].refTrans - rotated[i].targetTrans);
+            constants_vec.push_back(CA);
+            coefficients_vec.push_back(dQA);
+            weights_vec.push_back(w);
+
+            auto dQB = rotated[j].targetRotT - rotated[i].targetRotT;
+            auto CB = rotated[j].targetRotT * (rotated[j].refTrans - rotated[j].targetTrans)
+                     - rotated[i].targetRotT * (rotated[i].refTrans - rotated[i].targetTrans);
+            constants_vec.push_back(CB);
+            coefficients_vec.push_back(dQB);
+            weights_vec.push_back(w);
         }
     }
 
-    Eigen::VectorXd constants(deltas.size() * 3);
-    Eigen::MatrixXd coefficients(deltas.size() * 3, 3);
+    if (constants_vec.empty()) {
+        return Eigen::Vector3d::Zero();
+    }
 
-    for (size_t i = 0; i < deltas.size(); i++) {
+    // Build weighted least-squares system
+    Eigen::VectorXd constants(constants_vec.size() * 3);
+    Eigen::MatrixXd coefficients(constants_vec.size() * 3, 3);
+
+    for (size_t i = 0; i < constants_vec.size(); i++) {
+        double sw = sqrt(weights_vec[i]);
         for (int axis = 0; axis < 3; axis++) {
-            constants(i * 3 + axis) = deltas[i].first(axis);
-            coefficients.row(i * 3 + axis) = deltas[i].second.row(axis);
+            constants(i * 3 + axis) = constants_vec[i](axis) * sw;
+            coefficients.row(i * 3 + axis) = coefficients_vec[i].row(axis) * sw;
         }
     }
 
@@ -243,7 +321,7 @@ Eigen::AffineCompact3d KabschCalibrationSolver::computeCalibration() const {
 
 
 // ============================================================================
-// Validation
+// Validation (A.3: rotational error metric)
 // ============================================================================
 
 double KabschCalibrationSolver::retargetingErrorRMS(
@@ -264,7 +342,29 @@ double KabschCalibrationSolver::retargetingErrorRMS(
         sCount++;
     }
 
+    if (sCount == 0) return INFINITY;
     return sqrt(errorAccum / sCount);
+}
+
+double KabschCalibrationSolver::rotationalErrorRMS(
+    const Eigen::AffineCompact3d& calibration
+) const {
+    double errorAccum = 0;
+    int count = 0;
+
+    for (auto& sample : samples_) {
+        if (!sample.valid) continue;
+
+        Eigen::Matrix3d expected = calibration.rotation() * sample.target.rot;
+        Eigen::Matrix3d diff = expected * sample.ref.rot.transpose();
+        double trace = diff.trace();
+        double angle = acos(std::clamp((trace - 1.0) / 2.0, -1.0, 1.0));
+        errorAccum += angle * angle;
+        count++;
+    }
+
+    if (count == 0) return INFINITY;
+    return sqrt(errorAccum / count);
 }
 
 Eigen::Vector3d KabschCalibrationSolver::computeRefToTargetOffset(
@@ -284,15 +384,15 @@ Eigen::Vector3d KabschCalibrationSolver::computeRefToTargetOffset(
         sCount++;
     }
 
+    if (sCount == 0) return Eigen::Vector3d::Zero();
     accum /= sCount;
     return accum;
 }
 
+// B.3: outer-product covariance
 Eigen::Vector4d KabschCalibrationSolver::computeAxisVariance(
     const Eigen::AffineCompact3d& calibration
 ) const {
-    // Perform principal component analysis on the rotation quaternions to
-    // determine if the user rotated in enough axes to find a unique solution.
     std::vector<Eigen::Vector4d> points;
     Eigen::Vector4d mean = Eigen::Vector4d::Zero();
 
@@ -303,15 +403,14 @@ Eigen::Vector4d KabschCalibrationSolver::computeAxisVariance(
         mean += point;
         points.push_back(point);
     }
+
+    if (points.empty()) return Eigen::Vector4d::Zero();
     mean /= (double)points.size();
 
     Eigen::Matrix4d covMatrix = Eigen::Matrix4d::Zero();
     for (auto& point : points) {
-        for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 4; j++) {
-                covMatrix(i, j) += (point(i) - mean(i)) * (point(j) - mean(j));
-            }
-        }
+        Eigen::Vector4d centered = point - mean;
+        covMatrix.noalias() += centered * centered.transpose();
     }
     covMatrix /= (double)points.size();
 
@@ -324,7 +423,8 @@ Eigen::Vector4d KabschCalibrationSolver::computeAxisVariance(
 bool KabschCalibrationSolver::validateCalibration(
     const Eigen::AffineCompact3d& calibration,
     double* error,
-    Eigen::Vector3d* posOffsetV
+    Eigen::Vector3d* posOffsetV,
+    double* rotErrorOut
 ) {
     bool ok = true;
 
@@ -332,10 +432,75 @@ bool KabschCalibrationSolver::validateCalibration(
     if (posOffsetV) *posOffsetV = posOff;
 
     double rmsError = retargetingErrorRMS(posOff, calibration);
-    if (rmsError > 0.1) ok = false;
+    if (rmsError > activeParams_.maxRmsError) ok = false;
+
+    double rotRms = rotationalErrorRMS(calibration);
+    if (rotRms > activeParams_.maxRotationalRmsError) ok = false;
 
     if (error) *error = rmsError;
+    if (rotErrorOut) *rotErrorOut = rotRms;
     return ok;
+}
+
+
+// ============================================================================
+// A.2: MAD-based outlier rejection
+// ============================================================================
+
+size_t KabschCalibrationSolver::rejectOutliers(
+    const Eigen::AffineCompact3d& calibration,
+    double madMultiplier
+) {
+    if (madMultiplier <= 0) return 0;
+
+    // Compute per-sample position residuals
+    std::vector<double> residuals;
+    std::vector<size_t> validIndices;
+    residuals.reserve(samples_.size());
+    validIndices.reserve(samples_.size());
+
+    const auto posOff = computeRefToTargetOffset(calibration);
+
+    for (size_t i = 0; i < samples_.size(); i++) {
+        if (!samples_[i].valid) continue;
+
+        const auto updatedPose = applyTransform(samples_[i].target, calibration);
+        const Eigen::Vector3d hmdPoseSpace =
+            samples_[i].ref.rot * posOff + samples_[i].ref.trans;
+        double residual = (updatedPose.trans - hmdPoseSpace).norm();
+
+        residuals.push_back(residual);
+        validIndices.push_back(i);
+    }
+
+    if (residuals.size() < 4) return 0;  // not enough samples for MAD
+
+    // Compute median
+    std::vector<double> sorted = residuals;
+    std::sort(sorted.begin(), sorted.end());
+    double median = sorted[sorted.size() / 2];
+
+    // Compute MAD (median absolute deviation)
+    std::vector<double> absDevs(residuals.size());
+    for (size_t i = 0; i < residuals.size(); i++) {
+        absDevs[i] = fabs(residuals[i] - median);
+    }
+    std::sort(absDevs.begin(), absDevs.end());
+    double mad = absDevs[absDevs.size() / 2];
+
+    // MAD-to-sigma conversion for normal distribution
+    double threshold = madMultiplier * 1.4826 * mad;
+    if (threshold < 1e-10) return 0;  // all samples identical
+
+    size_t rejected = 0;
+    for (size_t i = 0; i < residuals.size(); i++) {
+        if (fabs(residuals[i] - median) > threshold) {
+            samples_[validIndices[i]].valid = false;
+            rejected++;
+        }
+    }
+
+    return rejected;
 }
 
 
@@ -383,14 +548,27 @@ Pose KabschCalibrationSolver::computeInstantOffset() const {
 
 
 // ============================================================================
-// One-shot calibration
+// One-shot calibration (A.2 outlier rejection)
 // ============================================================================
 
 CalibrationOutcome KabschCalibrationSolver::computeOneshot() {
     CalibrationOutcome outcome;
+    activeParams_ = CalibrationParams();  // use defaults for oneshot
 
     auto calibration = computeCalibration();
-    bool valid = validateCalibration(calibration);
+
+    // A.2: outlier rejection
+    size_t rejected = rejectOutliers(calibration, activeParams_.outlierMadMultiplier);
+    if (rejected > 0) {
+        std::ostringstream oss;
+        oss << "Rejected " << rejected << " outlier sample(s), recomputing...";
+        outcome.diagnosticMessages.push_back(oss.str());
+        calibration = computeCalibration();
+    }
+
+    double rotError = 0;
+    double posError = 0;
+    bool valid = validateCalibration(calibration, &posError, nullptr, &rotError);
 
     if (valid) {
         estimatedTransformation_ = calibration;
@@ -399,10 +577,12 @@ CalibrationOutcome KabschCalibrationSolver::computeOneshot() {
         currentResult_.transform = calibration;
         currentResult_.eulerDegrees = currentEulerRotation();
         currentResult_.translationCm = calibration.translation() * 100.0;
+        currentResult_.rmsError = posError;
+        currentResult_.rotationalRmsError = rotError;
         currentResult_.valid = true;
 
         outcome.result = currentResult_;
-        outcome.quality = classifyQuality(outcome.result.rmsError, true);
+        outcome.quality = classifyQuality(posError, true);
         outcome.applied = true;
     } else {
         outcome.diagnosticMessages.push_back("Not updating: Low-quality calibration result");
@@ -415,16 +595,26 @@ CalibrationOutcome KabschCalibrationSolver::computeOneshot() {
 
 
 // ============================================================================
-// Incremental (continuous) calibration
+// Incremental (continuous) calibration (A.1-A.5, B.1-B.4)
 // ============================================================================
 
 CalibrationOutcome KabschCalibrationSolver::computeIncremental(
     const CalibrationParams& params
 ) {
     CalibrationOutcome outcome;
+    activeParams_ = params;  // store for use by internal methods
     calcCycle_++;
 
     auto calibration = computeCalibration();
+
+    // A.2: outlier rejection
+    size_t rejected = rejectOutliers(calibration, params.outlierMadMultiplier);
+    if (rejected > 0) {
+        std::ostringstream oss;
+        oss << "Rejected " << rejected << " outlier sample(s), recomputing...";
+        outcome.diagnosticMessages.push_back(oss.str());
+        calibration = computeCalibration();
+    }
 
     bool usingRelPose = false;
     bool valid = true;
@@ -436,23 +626,31 @@ CalibrationOutcome KabschCalibrationSolver::computeIncremental(
     }
 
     double newError = INFINITY, priorCalibrationError = INFINITY;
+    double newRotError = 0;
     if (valid) {
-        valid = validateCalibration(calibration, &newError, &posOffset_);
+        valid = validateCalibration(calibration, &newError, &posOffset_, &newRotError);
         newCalRMS_ = newError;
     }
 
-    // Use stricter thresholds for continuous calibration to limit jitter
-    valid = valid && newError < params.continuousRmsThreshold;
+    // A.3: check both positional and rotational error for continuous mode
+    valid = valid && newError < params.continuousRmsThreshold
+                  && newRotError < params.continuousRotationalRmsThreshold;
 
     Eigen::Vector3d priorPosOffset;
     validateCalibration(estimatedTransformation_, &priorCalibrationError, &priorPosOffset);
     oldCalRMS_ = priorCalibrationError;
 
-    bool ok = valid;
-    bool oldCalibrationBetter = !valid ||
-        (isValid_ && priorCalibrationError < newError * params.continuousThreshold);
+    // A.4: hysteresis-based update decision
+    bool newIsBetter = valid && (!isValid_ ||
+        newError < priorCalibrationError * params.hysteresisAdoptThreshold);
 
-    if (oldCalibrationBetter) ok = false;
+    if (newIsBetter) {
+        consecutiveBetterCount_++;
+    } else {
+        consecutiveBetterCount_ = 0;
+    }
+
+    bool ok = newIsBetter && consecutiveBetterCount_ >= params.hysteresisStableCount;
 
     // Try relative pose calibration (static recalibration)
     Eigen::AffineCompact3d byRelPose;
@@ -467,7 +665,7 @@ CalibrationOutcome KabschCalibrationSolver::computeIncremental(
             retargetingErrorRMS(refToTargetPose_.translation(), estimatedTransformation_);
 
         if (!ok && relPoseValid &&
-            relPoseError * params.continuousThreshold < existingPoseErrorUsingRelPosition) {
+            relPoseError * params.hysteresisAdoptThreshold < existingPoseErrorUsingRelPosition) {
             usingRelPose = true;
             newError = relPoseError;
             calibration = byRelPose;
@@ -485,6 +683,7 @@ CalibrationOutcome KabschCalibrationSolver::computeIncremental(
 
         isValid_ = true;
         estimatedTransformation_ = calibration;
+        consecutiveBetterCount_ = 0;  // reset after adoption
 
         if (!usingRelPose) {
             refToTargetPose_ = estimateRefToTargetPose(estimatedTransformation_);
@@ -495,6 +694,7 @@ CalibrationOutcome KabschCalibrationSolver::computeIncremental(
         currentResult_.eulerDegrees = currentEulerRotation();
         currentResult_.translationCm = estimatedTransformation_.translation() * 100.0;
         currentResult_.rmsError = newError;
+        currentResult_.rotationalRmsError = newRotError;
         currentResult_.axisVariance = axisVariance_;
         currentResult_.valid = true;
 
@@ -503,7 +703,6 @@ CalibrationOutcome KabschCalibrationSolver::computeIncremental(
         outcome.quality = classifyQuality(newError, true);
         outcome.applied = true;
 
-        // The lerp flag is communicated via a diagnostic message
         if (lerp) {
             outcome.diagnosticMessages.push_back("lerp:true");
         }

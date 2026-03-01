@@ -45,7 +45,7 @@ public:
  */
 class KabschCalibrationSolver : public ICalibrationSolver {
 public:
-    static constexpr double AxisVarianceThreshold = 0.001;
+    static constexpr double AxisVarianceThreshold = 0.0005;
 
     KabschCalibrationSolver();
 
@@ -79,11 +79,15 @@ private:
 
     std::deque<Sample> samples_;
     CalibrationResult currentResult_;
+    CalibrationParams activeParams_;  // cached params for internal methods
 
     // Debug state
     Eigen::Vector3d posOffset_;
     double newCalRMS_, oldCalRMS_, axisVariance_;
     long calcCycle_;
+
+    // Hysteresis state (A.4)
+    int consecutiveBetterCount_ = 0;
 
     // Internal computation methods
     Eigen::Vector3d calibrateRotation() const;
@@ -92,11 +96,16 @@ private:
 
     double retargetingErrorRMS(const Eigen::Vector3d& hmdToTargetPos,
                                 const Eigen::AffineCompact3d& calibration) const;
+    double rotationalErrorRMS(const Eigen::AffineCompact3d& calibration) const;
     Eigen::Vector3d computeRefToTargetOffset(const Eigen::AffineCompact3d& calibration) const;
     Eigen::Vector4d computeAxisVariance(const Eigen::AffineCompact3d& calibration) const;
     bool validateCalibration(const Eigen::AffineCompact3d& calibration,
                               double* errorOut = nullptr,
-                              Eigen::Vector3d* posOffsetV = nullptr);
+                              Eigen::Vector3d* posOffsetV = nullptr,
+                              double* rotErrorOut = nullptr);
+
+    /// MAD-based outlier rejection. Returns number of rejected samples.
+    size_t rejectOutliers(const Eigen::AffineCompact3d& calibration, double madMultiplier);
 
     Eigen::AffineCompact3d estimateRefToTargetPose(const Eigen::AffineCompact3d& calibration) const;
     bool calibrateByRelPose(Eigen::AffineCompact3d& out) const;

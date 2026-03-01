@@ -58,6 +58,7 @@ struct CalibrationResult {
     Eigen::Vector3d translationCm;    // translation in centimeters
     double scale = 1.0;
     double rmsError = 0.0;
+    double rotationalRmsError = 0.0;  // RMS rotation error in radians
     double axisVariance = 0.0;
     bool valid = false;
 
@@ -69,19 +70,19 @@ struct CalibrationResult {
 };
 
 enum class CalibrationQuality {
-    Excellent,  // rmsError < 0.002
-    Good,       // rmsError < 0.005
-    Marginal,   // rmsError < 0.01
-    Poor,       // rmsError < 0.1
-    Invalid     // rmsError >= 0.1 or insufficient axis coverage
+    Excellent,  // rmsError < 0.003
+    Good,       // rmsError < 0.008
+    Marginal,   // rmsError < 0.015
+    Poor,       // rmsError < 0.05
+    Invalid     // rmsError >= 0.05 or insufficient axis coverage
 };
 
 inline CalibrationQuality classifyQuality(double rmsError, bool valid) {
     if (!valid) return CalibrationQuality::Invalid;
-    if (rmsError < 0.002) return CalibrationQuality::Excellent;
-    if (rmsError < 0.005) return CalibrationQuality::Good;
-    if (rmsError < 0.01)  return CalibrationQuality::Marginal;
-    if (rmsError < 0.1)   return CalibrationQuality::Poor;
+    if (rmsError < 0.003) return CalibrationQuality::Excellent;
+    if (rmsError < 0.008) return CalibrationQuality::Good;
+    if (rmsError < 0.015) return CalibrationQuality::Marginal;
+    if (rmsError < 0.05)  return CalibrationQuality::Poor;
     return CalibrationQuality::Invalid;
 }
 
