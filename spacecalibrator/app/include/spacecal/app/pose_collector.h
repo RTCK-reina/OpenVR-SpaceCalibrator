@@ -10,6 +10,7 @@
 #include <atomic>
 #include <thread>
 #include <functional>
+#include <mutex>
 
 namespace spacecal {
 
@@ -51,12 +52,8 @@ private:
     std::shared_ptr<EventBus> eventBus_;
     PoseCallback poseCallback_;
 
-    // Per-device pose storage (atomic-friendly)
-    struct DevicePoseEntry {
-        platform::VRDriverPose pose;
-        std::atomic<uint64_t> sequence{0};
-    };
-    std::array<DevicePoseEntry, kMaxDevices> devicePoses_;
+    std::array<platform::VRDriverPose, kMaxDevices> devicePoses_{};
+    mutable std::mutex devicePosesMutex_;
 
     uint64_t cursor_ = 0;
 

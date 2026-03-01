@@ -84,8 +84,10 @@ void PoseCollector::poll()
             pose.deviceIsConnected = augPose.deviceIsConnected;
 
             auto deviceId = static_cast<uint32_t>(augPose.deviceId);
-            devicePoses_[deviceId].pose = pose;
-            devicePoses_[deviceId].sequence.fetch_add(1, std::memory_order_release);
+            {
+                std::lock_guard<std::mutex> lock(devicePosesMutex_);
+                devicePoses_[deviceId] = pose;
+            }
 
             if (poseCallback_)
                 poseCallback_(deviceId, pose);
@@ -94,7 +96,6 @@ void PoseCollector::poll()
         ++cursor_;
     }
 
-    std::atomic_thread_fence(std::memory_order_release);
 }
 
 void PoseCollector::startBackgroundPolling(double intervalHz)
@@ -124,7 +125,8 @@ platform::VRDriverPose PoseCollector::getDevicePose(uint32_t deviceId) const
 {
     if (deviceId >= kMaxDevices)
         return platform::VRDriverPose{};
-    return devicePoses_[deviceId].pose;
+    std::lock_guard<std::mutex> lock(devicePosesMutex_);
+    return devicePoses_[deviceId];
 }
 
 } // namespace spacecal
