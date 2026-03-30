@@ -5,6 +5,15 @@
 #include <vector>
 #include <deque>
 #include <iostream>
+#include <memory>
+
+// New solver (pure Eigen, no platform deps)
+#include <spacecal/core/calibration_solver.h>
+#include <spacecal/core/calibration_policy.h>
+
+// ---------------------------------------------------------------------------
+// Legacy types kept for Calibration.cpp / CalibrationDebug.cpp compatibility
+// ---------------------------------------------------------------------------
 
 struct Pose
 {
@@ -16,7 +25,7 @@ struct Pose
 		rot = transform.rotation();
 		trans = transform.translation();
 	}
-	
+
 	Pose(vr::HmdMatrix34_t hmdMatrix)
 	{
 		for (int i = 0; i < 3; i++) {
@@ -54,25 +63,21 @@ struct Sample
 	Sample(Pose ref, Pose target) : valid(true), ref(ref), target(target) { }
 };
 
+// ---------------------------------------------------------------------------
+// CalibrationCalc: thin wrapper around KabschCalibrationSolver.
+// Public API is unchanged so Calibration.cpp requires no modification.
+// ---------------------------------------------------------------------------
+
 class CalibrationCalc {
 public:
+	/// Axis variance threshold (mirrors KabschCalibrationSolver::AxisVarianceThreshold)
 	static const double AxisVarianceThreshold;
 
 	bool enableStaticRecalibration;
-	
-	const Eigen::AffineCompact3d Transformation() const 
-	{
-		return m_estimatedTransformation;
-	}
 
-	const Eigen::Vector3d EulerRotation() const {
-		auto rot = m_estimatedTransformation.rotation();
-		return rot.eulerAngles(2, 1, 0) * 180.0 / EIGEN_PI;
-	}
-
-	bool isValid() const {
-		return m_isValid;
-	}
+	const Eigen::AffineCompact3d Transformation() const;
+	const Eigen::Vector3d EulerRotation() const;
+	bool isValid() const;
 
 	void PushSample(const Sample& sample);
 	void Clear();
@@ -80,47 +85,16 @@ public:
 	bool ComputeOneshot();
 	bool ComputeIncremental(bool &lerp, double threshold);
 
-	size_t SampleCount() const {
-		return m_samples.size();
-	}
+	size_t SampleCount() const;
+	void ShiftSample();
 
-	void ShiftSample() {
-		if (!m_samples.empty()) m_samples.pop_front();
-	}
+	CalibrationCalc();
 
-	CalibrationCalc() : m_isValid(false), m_calcCycle(0), enableStaticRecalibration(true) {}
-
-	// Debug fields
+	// Debug fields (populated after each Compute* call, read by CalibrationDebug.cpp)
 	Eigen::Vector3d m_posOffset;
 	double m_newCalRMS, m_oldCalRMS, m_axisVariance;
 	long m_calcCycle;
 
 private:
-	bool m_isValid;
-	Eigen::AffineCompact3d m_estimatedTransformation;
-
-	/*
-	 * This affine transform estimates the pose of the target within the reference device's local pose space.
-	 * That is to say, it's given by transforming the target world pose by the inverse reference pose.
-	 */
-	Eigen::AffineCompact3d m_refToTargetPose;
-	bool m_refToTargetPoseValid;
-
-	std::deque<Sample> m_samples;
-
-	Eigen::Vector3d CalibrateRotation() const;
-	Eigen::Vector3d CalibrateTranslation(const Eigen::Matrix3d &rotation) const;
-
-	Eigen::AffineCompact3d ComputeCalibration() const;
-
-	double RetargetingErrorRMS(const Eigen::Vector3d& hmdToTargetPos, const Eigen::AffineCompact3d& calibration) const;
-	Eigen::Vector3d ComputeRefToTargetOffset(const Eigen::AffineCompact3d& calibration) const;
-
-	Eigen::Vector4d ComputeAxisVariance(const Eigen::AffineCompact3d& calibration) const;
-
-	bool ValidateCalibration(const Eigen::AffineCompact3d& calibration, double *errorOut = nullptr, Eigen::Vector3d* posOffsetV = nullptr);
-	void ComputeInstantOffset();
-
-	Eigen::AffineCompact3d EstimateRefToTargetPose(const Eigen::AffineCompact3d& calibration) const;
-	bool CalibrateByRelPose(Eigen::AffineCompact3d &out) const;
+	spacecal::KabschCalibrationSolver m_solver;
 };

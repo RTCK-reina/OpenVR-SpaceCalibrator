@@ -11,3 +11,8 @@ ipch
 /install/OpenVR-SpaceCalibrator.exe
 lib/Release/
 spacecalibrator/build/
+OpenVR-SpaceCalibrator/OpenVR-S.*/
+*.obj
+*.pch
+*.iobj
+*.ipdb

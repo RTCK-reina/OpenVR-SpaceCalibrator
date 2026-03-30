@@ -30,6 +30,9 @@ public:
         const CalibrationParams& params
     ) = 0;
 
+    /// Adopt an externally supplied calibration (for example a manual edit).
+    virtual void adoptCalibration(const CalibrationResult& result) = 0;
+
     virtual bool isValid() const = 0;
     virtual const CalibrationResult& currentResult() const = 0;
     virtual const Eigen::AffineCompact3d& currentTransformation() const = 0;
@@ -56,6 +59,7 @@ public:
 
     CalibrationOutcome computeOneshot() override;
     CalibrationOutcome computeIncremental(const CalibrationParams& params) override;
+    void adoptCalibration(const CalibrationResult& result) override;
 
     bool isValid() const override;
     const CalibrationResult& currentResult() const override;

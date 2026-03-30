@@ -143,6 +143,18 @@ Eigen::Vector3d KabschCalibrationSolver::currentEulerRotation() const {
     return rot.eulerAngles(2, 1, 0) * 180.0 / EIGEN_PI;
 }
 
+void KabschCalibrationSolver::adoptCalibration(const CalibrationResult& result) {
+    estimatedTransformation_ = result.transform;
+    currentResult_ = result;
+    isValid_ = result.valid;
+    refToTargetPoseValid_ = false;
+    consecutiveBetterCount_ = 0;
+    newCalRMS_ = result.rmsError;
+    oldCalRMS_ = result.rmsError;
+    axisVariance_ = result.axisVariance;
+    posOffset_.setZero();
+}
+
 
 // ============================================================================
 // Kabsch SVD rotation calibration (A.1 temporal weighting, B.1 pre-alloc, B.4 sliding window)
