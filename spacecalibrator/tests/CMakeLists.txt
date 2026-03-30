@@ -38,6 +38,9 @@ catch_discover_tests(spacecal_core_tests)
 # App tests
 add_executable(spacecal_app_tests
     app/orchestrator_test.cpp
+    app/driver_bridge_test.cpp
+    app/pose_collector_test.cpp
+    app/profile_manager_test.cpp
 )
 
 target_include_directories(spacecal_app_tests

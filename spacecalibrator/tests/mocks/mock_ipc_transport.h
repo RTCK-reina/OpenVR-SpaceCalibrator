@@ -2,6 +2,7 @@
 
 #include <spacecal/platform/ipc_transport.h>
 
+#include <cstring>
 #include <deque>
 #include <vector>
 
