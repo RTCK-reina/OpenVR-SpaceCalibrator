@@ -67,8 +67,11 @@ DSample deltaRotationSamples(const Sample& s1, const Sample& s2) {
     auto targetA = angleFromRotationMatrix3(dtarget);
     ds.valid = refA > 0.4 && targetA > 0.4 && ds.ref.norm() > 0.01 && ds.target.norm() > 0.01;
 
-    ds.ref.normalize();
-    ds.target.normalize();
+    // Guard normalization to avoid introducing NaNs into invalid samples.
+    if (ds.valid) {
+        ds.ref.normalize();
+        ds.target.normalize();
+    }
     return ds;
 }
 
@@ -110,9 +113,16 @@ void KabschCalibrationSolver::pushSample(const Sample& sample) {
 
 void KabschCalibrationSolver::clear() {
     estimatedTransformation_.setIdentity();
+    refToTargetPose_.setIdentity();
     isValid_ = false;
+    refToTargetPoseValid_ = false;
     samples_.clear();
     currentResult_ = CalibrationResult();
+    posOffset_.setZero();
+    newCalRMS_ = 0;
+    oldCalRMS_ = 0;
+    axisVariance_ = 0;
+    calcCycle_ = 0;
     consecutiveBetterCount_ = 0;
 }
 
