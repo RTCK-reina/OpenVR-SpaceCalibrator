@@ -1,6 +1,17 @@
 #include <spacecal/app/calibration_orchestrator.h>
 
+#include <chrono>
+
 namespace spacecal {
+
+namespace {
+
+double monotonicSecondsNow() {
+    using clock = std::chrono::steady_clock;
+    return std::chrono::duration<double>(clock::now().time_since_epoch()).count();
+}
+
+} // namespace
 
 CalibrationOrchestrator::CalibrationOrchestrator(
     std::unique_ptr<ICalibrationSolver> solver,
@@ -57,11 +68,13 @@ void CalibrationOrchestrator::startEditing() {
 }
 
 void CalibrationOrchestrator::applyManualEdit(const CalibrationResult& edited) {
+    solver_->adoptCalibration(edited);
+
     // The edited result is published as a completed calibration
     CalibrationOutcome outcome;
-    outcome.result = edited;
-    outcome.quality = classifyQuality(edited.rmsError, edited.valid);
-    outcome.applied = true;
+    outcome.result = solver_->currentResult();
+    outcome.quality = classifyQuality(outcome.result.rmsError, outcome.result.valid);
+    outcome.applied = outcome.result.valid;
 
     if (eventBus_) {
         eventBus_->publish(events::CalibrationCompleted{outcome});
@@ -78,7 +91,15 @@ void CalibrationOrchestrator::onPoseReceived(
         return;
     }
 
-    solver_->pushSample(Sample(refPose, targetPose, timeLastTick_));
+    if (referenceId_ < 0 || targetId_ < 0) {
+        return;
+    }
+
+    if (referenceId != referenceId_ || targetId != targetId_) {
+        return;
+    }
+
+    solver_->pushSample(Sample(refPose, targetPose, monotonicSecondsNow()));
 
     size_t target = sampleCountForSpeed(speed_);
     if (eventBus_) {

@@ -107,9 +107,10 @@ Expected<void> PosixIPCTransport::send(const void* data, size_t size)
         ssize_t sent = ::send(sockFd_, ptr, remaining, MSG_NOSIGNAL);
         if (sent < 0) {
             if (errno == EINTR) continue;
-            connected_.store(false, std::memory_order_release);
+            const int savedErrno = errno;
+            disconnect();
             return Error(ErrorCategory::IPC, ipc_error::kBrokenPipe,
-                         std::string("send() failed: ") + std::strerror(errno));
+                         std::string("send() failed: ") + std::strerror(savedErrno));
         }
         ptr       += sent;
         remaining -= static_cast<size_t>(sent);
@@ -144,7 +145,7 @@ Expected<std::vector<uint8_t>> PosixIPCTransport::receive(std::chrono::milliseco
     std::vector<uint8_t> buf(4096);
     ssize_t n = ::recv(sockFd_, buf.data(), buf.size(), 0);
     if (n <= 0) {
-        connected_.store(false, std::memory_order_release);
+        disconnect();
         return Error(ErrorCategory::IPC, ipc_error::kBrokenPipe, "Connection closed");
     }
 

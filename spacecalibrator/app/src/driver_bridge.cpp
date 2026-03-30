@@ -29,14 +29,22 @@ bool DriverBridge::connect(std::chrono::milliseconds timeout)
     std::memcpy(buf.data(), &hdr, sizeof(hdr));
     std::memcpy(buf.data() + sizeof(hdr), &handshake, sizeof(handshake));
 
-    if (!transport_->send(buf.data(), buf.size()))
+    if (!transport_->send(buf.data(), buf.size())) {
+        transport_->disconnect();
         return false;
+    }
 
     auto resp = transport_->receiveTyped<protocol::ResponsePayload>(timeout);
-    if (!resp)
+    if (!resp) {
+        transport_->disconnect();
         return false;
+    }
 
-    return resp.value().code == protocol::ResponseCode::Handshake;
+    const bool ok = resp.value().code == protocol::ResponseCode::Handshake;
+    if (!ok) {
+        transport_->disconnect();
+    }
+    return ok;
 }
 
 void DriverBridge::disconnect()

@@ -40,24 +40,24 @@ Expected<void> ProfileManager::saveActive(const CalibrationProfile& profile)
 static picojson::object serializeAlignmentParams(const AlignmentSpeedParams& p)
 {
     picojson::object obj;
-    obj["align_speed_tiny"] .set<double>(p.align_speed_tiny);
-    obj["align_speed_small"].set<double>(p.align_speed_small);
-    obj["align_speed_large"].set<double>(p.align_speed_large);
-    obj["thr_trans_tiny"]   .set<double>(p.thr_trans_tiny);
-    obj["thr_trans_small"]  .set<double>(p.thr_trans_small);
-    obj["thr_trans_large"]  .set<double>(p.thr_trans_large);
-    obj["thr_rot_tiny"]     .set<double>(p.thr_rot_tiny);
-    obj["thr_rot_small"]    .set<double>(p.thr_rot_small);
-    obj["thr_rot_large"]    .set<double>(p.thr_rot_large);
+    obj["align_speed_tiny"]  = picojson::value(p.align_speed_tiny);
+    obj["align_speed_small"] = picojson::value(p.align_speed_small);
+    obj["align_speed_large"] = picojson::value(p.align_speed_large);
+    obj["thr_trans_tiny"]    = picojson::value(p.thr_trans_tiny);
+    obj["thr_trans_small"]   = picojson::value(p.thr_trans_small);
+    obj["thr_trans_large"]   = picojson::value(p.thr_trans_large);
+    obj["thr_rot_tiny"]      = picojson::value(p.thr_rot_tiny);
+    obj["thr_rot_small"]     = picojson::value(p.thr_rot_small);
+    obj["thr_rot_large"]     = picojson::value(p.thr_rot_large);
     return obj;
 }
 
 static picojson::object serializeDeviceId(const CalibrationProfile::DeviceId& d)
 {
     picojson::object obj;
-    obj["tracking_system"].set<std::string>(d.trackingSystem);
-    obj["model"]          .set<std::string>(d.model);
-    obj["serial"]         .set<std::string>(d.serial);
+    obj["tracking_system"] = picojson::value(d.trackingSystem);
+    obj["model"] = picojson::value(d.model);
+    obj["serial"] = picojson::value(d.serial);
     return obj;
 }
 
@@ -86,65 +86,66 @@ std::string JsonProfileSerializer::serialize(const CalibrationProfile& profile)
 {
     picojson::object obj;
 
-    obj["alignment_params"].set<picojson::object>(
+    obj["version"] = picojson::value(static_cast<double>(profile.version));
+    obj["name"] = picojson::value(profile.name);
+    obj["alignment_params"] = picojson::value(
         serializeAlignmentParams(profile.alignmentParams));
 
     // Continuous calibration threshold is stored alongside alignment params
     // in the legacy format. Mirror that behavior.
     {
         auto& ap = obj["alignment_params"].get<picojson::object>();
-        ap["continuousCalibrationThreshold"].set<double>(
-            profile.continuousCalibrationThreshold);
+        ap["continuousCalibrationThreshold"] =
+            picojson::value(profile.continuousCalibrationThreshold);
     }
 
-    obj["reference_tracking_system"].set<std::string>(profile.referenceTrackingSystem);
-    obj["target_tracking_system"]   .set<std::string>(profile.targetTrackingSystem);
+    obj["reference_tracking_system"] = picojson::value(profile.referenceTrackingSystem);
+    obj["target_tracking_system"] = picojson::value(profile.targetTrackingSystem);
 
     // eulerRotationDegrees: (0)=roll, (1)=yaw, (2)=pitch
-    obj["roll"] .set<double>(profile.eulerRotationDegrees(0));
-    obj["yaw"]  .set<double>(profile.eulerRotationDegrees(1));
-    obj["pitch"].set<double>(profile.eulerRotationDegrees(2));
+    obj["roll"] = picojson::value(profile.eulerRotationDegrees(0));
+    obj["yaw"] = picojson::value(profile.eulerRotationDegrees(1));
+    obj["pitch"] = picojson::value(profile.eulerRotationDegrees(2));
 
     // translationCm: (0)=x, (1)=y, (2)=z
-    obj["x"].set<double>(profile.translationCm(0));
-    obj["y"].set<double>(profile.translationCm(1));
-    obj["z"].set<double>(profile.translationCm(2));
+    obj["x"] = picojson::value(profile.translationCm(0));
+    obj["y"] = picojson::value(profile.translationCm(1));
+    obj["z"] = picojson::value(profile.translationCm(2));
 
-    obj["scale"].set<double>(profile.scale);
+    obj["scale"] = picojson::value(profile.scale);
 
-    obj["reference_device"].set<picojson::object>(
+    obj["reference_device"] = picojson::value(
         serializeDeviceId(profile.referenceDevice));
-    obj["target_device"].set<picojson::object>(
+    obj["target_device"] = picojson::value(
         serializeDeviceId(profile.targetDevice));
 
-    obj["autostart_continuous_calibration"].set<bool>(profile.autostartContinuous);
-    obj["quash_target_in_continuous"]      .set<bool>(profile.quashTargetInContinuous);
-    obj["calibration_speed"].set<double>(
+    obj["autostart_continuous_calibration"] = picojson::value(profile.autostartContinuous);
+    obj["enable_static_recalibration"] = picojson::value(profile.enableStaticRecalibration);
+    obj["quash_target_in_continuous"] = picojson::value(profile.quashTargetInContinuous);
+    obj["calibration_speed"] = picojson::value(
         static_cast<double>(static_cast<int>(profile.speed)));
 
     if (profile.chaperone.has_value()) {
         const auto& ch = profile.chaperone.value();
         picojson::object chObj;
-        chObj["auto_apply"].set<bool>(ch.autoApply);
-        chObj["play_space_size"].set<picojson::array>(
+        chObj["auto_apply"] = picojson::value(ch.autoApply);
+        chObj["play_space_size"] = picojson::value(
             floatArrayToJson(ch.playSpaceSize, 2));
-        chObj["standing_center"].set<picojson::array>(
+        chObj["standing_center"] = picojson::value(
             floatArrayToJson(ch.standingCenter, 12));
-        chObj["geometry"].set<picojson::array>(
+        chObj["geometry"] = picojson::value(
             floatArrayToJson(ch.geometryData.data(),
                              static_cast<int>(ch.geometryData.size())));
-        obj["chaperone"].set<picojson::object>(chObj);
+        obj["chaperone"] = picojson::value(chObj);
     }
 
     // Wrap in array (legacy format compatibility)
-    picojson::value profileV;
-    profileV.set<picojson::object>(obj);
+    picojson::value profileV(obj);
 
     picojson::array profiles;
     profiles.push_back(profileV);
 
-    picojson::value profilesV;
-    profilesV.set<picojson::array>(profiles);
+    picojson::value profilesV(profiles);
 
     return profilesV.serialize(true);
 }
@@ -231,6 +232,19 @@ Expected<CalibrationProfile> JsonProfileSerializer::deserialize(const std::strin
         if (it != obj.end()) return it->second.evaluate_as_boolean();
         return false;
     };
+    auto tryGetBool = [&](const char* key, bool& out) {
+        auto it = obj.find(key);
+        if (it != obj.end()) {
+            out = it->second.evaluate_as_boolean();
+        }
+    };
+
+    {
+        double version = profile.version;
+        getDbl("version", version);
+        profile.version = static_cast<uint32_t>(version);
+    }
+    getStr("name", profile.name);
 
     // Alignment params
     {
@@ -276,6 +290,7 @@ Expected<CalibrationProfile> JsonProfileSerializer::deserialize(const std::strin
     }
 
     profile.autostartContinuous    = getBool("autostart_continuous_calibration");
+    tryGetBool("enable_static_recalibration", profile.enableStaticRecalibration);
     profile.quashTargetInContinuous = getBool("quash_target_in_continuous");
 
     {

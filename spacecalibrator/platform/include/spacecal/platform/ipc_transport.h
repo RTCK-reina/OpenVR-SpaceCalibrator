@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 #include <functional>
 #include <chrono>
@@ -30,6 +31,37 @@ public:
     /// Receive raw bytes. Blocks until a message is received or timeout.
     virtual Expected<std::vector<uint8_t>> receive(std::chrono::milliseconds timeout) = 0;
 
+    /// Receive exactly `size` bytes, stitching together short reads if needed.
+    Expected<std::vector<uint8_t>> receiveExact(
+        size_t size,
+        std::chrono::milliseconds timeout
+    ) {
+        std::vector<uint8_t> buffer;
+        buffer.reserve(size);
+
+        while (buffer.size() < size) {
+            auto chunk = receive(timeout);
+            if (!chunk) {
+                return chunk.error();
+            }
+
+            const auto& bytes = chunk.value();
+            if (bytes.empty()) {
+                return Error(ErrorCategory::IPC, ipc_error::kBrokenPipe, "Connection closed");
+            }
+
+            const size_t remaining = size - buffer.size();
+            if (bytes.size() > remaining) {
+                return Error(ErrorCategory::IPC, ipc_error::kBrokenPipe,
+                             "Received more bytes than expected");
+            }
+
+            buffer.insert(buffer.end(), bytes.begin(), bytes.end());
+        }
+
+        return buffer;
+    }
+
     /// Send a typed message (convenience wrapper).
     template<typename T>
     Expected<void> sendTyped(const T& msg) {
@@ -39,13 +71,8 @@ public:
     /// Receive a typed message (convenience wrapper).
     template<typename T>
     Expected<T> receiveTyped(std::chrono::milliseconds timeout) {
-        auto result = receive(timeout);
+        auto result = receiveExact(sizeof(T), timeout);
         if (!result) return result.error();
-        if (result.value().size() != sizeof(T)) {
-            return Error(ErrorCategory::IPC, ipc_error::kBrokenPipe,
-                        "Invalid message size: expected " + std::to_string(sizeof(T)) +
-                        ", got " + std::to_string(result.value().size()));
-        }
         T msg;
         memcpy(&msg, result.value().data(), sizeof(T));
         return msg;

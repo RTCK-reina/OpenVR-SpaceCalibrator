@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Eigen/Dense>
+#include <utility>
 #include <vector>
 #include <deque>
 #include <string>
@@ -46,9 +47,9 @@ struct Sample {
 
     Sample() : valid(false) {}
     Sample(Pose ref, Pose target)
-        : valid(true), ref(std::move(ref)), target(std::move(target)) {}
+        : ref(std::move(ref)), target(std::move(target)), valid(true) {}
     Sample(Pose ref, Pose target, double ts)
-        : valid(true), ref(std::move(ref)), target(std::move(target)), timestamp(ts) {}
+        : ref(std::move(ref)), target(std::move(target)), valid(true), timestamp(ts) {}
 };
 
 /// The result of a calibration computation.
@@ -100,9 +101,9 @@ struct AlignmentSpeedParams {
     double thr_trans_small = 1.0 / 1000.0;
     double thr_trans_large = 20.0 / 1000.0;
 
-    double thr_rot_tiny = 0.49 * (M_PI / 180.0);
-    double thr_rot_small = 0.5 * (M_PI / 180.0);
-    double thr_rot_large = 5.0 * (M_PI / 180.0);
+    double thr_rot_tiny = 0.49 * (EIGEN_PI / 180.0);
+    double thr_rot_small = 0.5 * (EIGEN_PI / 180.0);
+    double thr_rot_large = 5.0 * (EIGEN_PI / 180.0);
 
     double align_speed_tiny = 1.0;
     double align_speed_small = 1.0;

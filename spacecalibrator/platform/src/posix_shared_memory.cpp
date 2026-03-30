@@ -37,7 +37,12 @@ bool PosixSharedMemory::create(const std::string& name, size_t size)
         return false;
     }
 
-    return mapMemory(name_, size, true);
+    if (!mapMemory(name_, size, true)) {
+        return false;
+    }
+
+    std::memset(ptr_, 0, size_);
+    return true;
 }
 
 bool PosixSharedMemory::open(const std::string& name, size_t size)

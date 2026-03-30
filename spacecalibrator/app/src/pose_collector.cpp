@@ -1,4 +1,5 @@
 #include <spacecal/app/pose_collector.h>
+#include <spacecal/app/events.h>
 #include <spacecal/protocol/shared_pose_buffer.h>
 
 #include <chrono>
@@ -91,6 +92,14 @@ void PoseCollector::poll()
 
             if (poseCallback_)
                 poseCallback_(deviceId, pose);
+
+            if (eventBus_) {
+                eventBus_->publish(events::PoseUpdated{
+                    deviceId,
+                    pose,
+                    static_cast<double>(augPose.timestampTicks),
+                });
+            }
         }
 
         ++cursor_;
