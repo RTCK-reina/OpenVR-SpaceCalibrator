@@ -98,44 +98,44 @@ void CreateGLFWWindow()
 	ImGui_ImplGlfw_InitForOpenGL(glfwWindow, true);
 	ImGui_ImplOpenGL3_Init("#version 330");
 
-	// Modern dark theme
+	// Modern dark theme (refined)
 	{
 		ImGuiStyle &style = ImGui::GetStyle();
 
-		// Rounding
-		style.WindowRounding = 6.0f;
-		style.ChildRounding = 6.0f;
-		style.FrameRounding = 4.0f;
-		style.PopupRounding = 4.0f;
-		style.ScrollbarRounding = 4.0f;
-		style.GrabRounding = 3.0f;
-		style.TabRounding = 4.0f;
+		// Rounding - slightly more rounded for modern look
+		style.WindowRounding   = 6.0f;
+		style.ChildRounding    = 6.0f;
+		style.FrameRounding    = 5.0f;
+		style.PopupRounding    = 5.0f;
+		style.ScrollbarRounding= 4.0f;
+		style.GrabRounding     = 4.0f;
+		style.TabRounding      = 5.0f;
 
-		// Spacing & padding
-		style.WindowPadding = ImVec2(12.0f, 12.0f);
-		style.FramePadding = ImVec2(8.0f, 5.0f);
-		style.ItemSpacing = ImVec2(8.0f, 6.0f);
-		style.ItemInnerSpacing = ImVec2(6.0f, 4.0f);
-		style.ScrollbarSize = 14.0f;
-		style.GrabMinSize = 12.0f;
+		// Spacing & padding - slightly more breathing room
+		style.WindowPadding     = ImVec2(12.0f, 12.0f);
+		style.FramePadding      = ImVec2(9.0f,  5.0f);
+		style.ItemSpacing       = ImVec2(8.0f,  7.0f);
+		style.ItemInnerSpacing  = ImVec2(6.0f,  4.0f);
+		style.ScrollbarSize     = 13.0f;
+		style.GrabMinSize       = 13.0f;
+		style.IndentSpacing     = 20.0f;
 
 		// Borders
-		style.WindowBorderSize = 1.0f;
-		style.ChildBorderSize = 1.0f;
-		style.FrameBorderSize = 0.0f;
-		style.PopupBorderSize = 1.0f;
-		style.TabBorderSize = 0.0f;
-
+		style.WindowBorderSize  = 1.0f;
+		style.ChildBorderSize   = 1.0f;
+		style.FrameBorderSize   = 0.0f;
+		style.PopupBorderSize   = 1.0f;
+		style.TabBorderSize     = 0.0f;
 		// Alignment
-		style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
+		style.WindowTitleAlign  = ImVec2(0.5f, 0.5f);
 
 		// Colors - modern muted dark palette with teal accent
 		ImVec4 *colors = style.Colors;
 
-		// Backgrounds
-		colors[ImGuiCol_WindowBg]             = ImVec4(0.11f, 0.12f, 0.14f, 1.00f);
-		colors[ImGuiCol_ChildBg]              = ImVec4(0.13f, 0.14f, 0.16f, 1.00f);
-		colors[ImGuiCol_PopupBg]              = ImVec4(0.13f, 0.14f, 0.17f, 0.96f);
+		// Backgrounds - deep muted dark
+		colors[ImGuiCol_WindowBg]             = ImVec4(0.10f, 0.11f, 0.13f, 1.00f);
+		colors[ImGuiCol_ChildBg]              = ImVec4(0.12f, 0.13f, 0.16f, 1.00f);
+		colors[ImGuiCol_PopupBg]              = ImVec4(0.12f, 0.13f, 0.17f, 0.97f);
 
 		// Borders
 		colors[ImGuiCol_Border]               = ImVec4(0.22f, 0.24f, 0.28f, 0.60f);
