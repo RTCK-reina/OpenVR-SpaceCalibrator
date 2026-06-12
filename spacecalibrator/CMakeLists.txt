@@ -13,6 +13,10 @@ option(SPACECAL_BUILD_UI "Build overlay application" ON)
 include(cmake/Platform.cmake)
 
 # Dependencies
+set(SPACECAL_LOCAL_EIGEN3_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../lib/eigen3-cmake")
+if(NOT Eigen3_DIR AND EXISTS "${SPACECAL_LOCAL_EIGEN3_DIR}/Eigen3Config.cmake")
+    set(Eigen3_DIR "${SPACECAL_LOCAL_EIGEN3_DIR}" CACHE PATH "Path to Eigen3Config.cmake")
+endif()
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 
 # Core library (pure math, no platform dependencies)

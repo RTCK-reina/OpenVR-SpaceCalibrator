@@ -1,4 +1,4 @@
-#include <catch2/catch_test_macros.hpp>
+#include "test_framework.h"
 
 #include <spacecal/app/calibration_orchestrator.h>
 #include <spacecal/app/event_bus.h>
@@ -15,12 +15,11 @@ TEST_CASE("CalibrationOrchestrator initial state", "[app][orchestrator]") {
     REQUIRE(orch.sampleCount() == 0);
 }
 
-TEST_CASE("CalibrationOrchestrator state transitions", "[app][orchestrator]") {
+TEST_CASE("CalibrationOrchestrator starts oneshot calibration", "[app][orchestrator]") {
     auto solver = std::make_unique<KabschCalibrationSolver>();
     auto eventBus = std::make_shared<EventBus>();
     CalibrationOrchestrator orch(std::move(solver), eventBus);
 
-    // Track state changes
     std::vector<events::CalibrationState> stateHistory;
     eventBus->subscribe<events::CalibrationStateChanged>(
         [&](const events::CalibrationStateChanged& e) {
@@ -28,29 +27,46 @@ TEST_CASE("CalibrationOrchestrator state transitions", "[app][orchestrator]") {
         }
     );
 
-    SECTION("start oneshot calibration") {
-        orch.startOneshot(CalibrationSpeed::Fast);
-        REQUIRE(orch.state() == events::CalibrationState::CollectingRotation);
-        REQUIRE(stateHistory.size() == 1);
-        REQUIRE(stateHistory[0] == events::CalibrationState::CollectingRotation);
-    }
+    orch.startOneshot(CalibrationSpeed::Fast);
+    REQUIRE(orch.state() == events::CalibrationState::CollectingRotation);
+    REQUIRE(stateHistory.size() == 1);
+    REQUIRE(stateHistory[0] == events::CalibrationState::CollectingRotation);
+}
 
-    SECTION("start continuous calibration") {
-        orch.startContinuous();
-        REQUIRE(orch.state() == events::CalibrationState::Continuous);
-    }
+TEST_CASE("CalibrationOrchestrator starts continuous calibration", "[app][orchestrator]") {
+    auto solver = std::make_unique<KabschCalibrationSolver>();
+    auto eventBus = std::make_shared<EventBus>();
+    CalibrationOrchestrator orch(std::move(solver), eventBus);
 
-    SECTION("stop calibration") {
-        orch.startOneshot(CalibrationSpeed::Fast);
-        orch.stopCalibration();
-        REQUIRE(orch.state() == events::CalibrationState::Idle);
-        REQUIRE(stateHistory.size() == 2);
-    }
+    orch.startContinuous();
+    REQUIRE(orch.state() == events::CalibrationState::Continuous);
+}
 
-    SECTION("start editing") {
-        orch.startEditing();
-        REQUIRE(orch.state() == events::CalibrationState::Editing);
-    }
+TEST_CASE("CalibrationOrchestrator stops calibration", "[app][orchestrator]") {
+    auto solver = std::make_unique<KabschCalibrationSolver>();
+    auto eventBus = std::make_shared<EventBus>();
+    CalibrationOrchestrator orch(std::move(solver), eventBus);
+
+    std::vector<events::CalibrationState> stateHistory;
+    eventBus->subscribe<events::CalibrationStateChanged>(
+        [&](const events::CalibrationStateChanged& e) {
+            stateHistory.push_back(e.current);
+        }
+    );
+
+    orch.startOneshot(CalibrationSpeed::Fast);
+    orch.stopCalibration();
+    REQUIRE(orch.state() == events::CalibrationState::Idle);
+    REQUIRE(stateHistory.size() == 2);
+}
+
+TEST_CASE("CalibrationOrchestrator starts editing", "[app][orchestrator]") {
+    auto solver = std::make_unique<KabschCalibrationSolver>();
+    auto eventBus = std::make_shared<EventBus>();
+    CalibrationOrchestrator orch(std::move(solver), eventBus);
+
+    orch.startEditing();
+    REQUIRE(orch.state() == events::CalibrationState::Editing);
 }
 
 TEST_CASE("CalibrationOrchestrator tracks sample count", "[app][orchestrator]") {
@@ -83,6 +99,8 @@ TEST_CASE("CalibrationOrchestrator emits progress events", "[app][orchestrator]"
         }
     );
 
+    orch.setReferenceDevice(0);
+    orch.setTargetDevice(1);
     orch.startOneshot(CalibrationSpeed::Fast);
 
     Pose p;

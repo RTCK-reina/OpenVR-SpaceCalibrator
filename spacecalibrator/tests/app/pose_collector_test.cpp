@@ -1,4 +1,4 @@
-#include <catch2/catch_test_macros.hpp>
+#include "test_framework.h"
 
 #include <spacecal/app/event_bus.h>
 #include <spacecal/app/events.h>

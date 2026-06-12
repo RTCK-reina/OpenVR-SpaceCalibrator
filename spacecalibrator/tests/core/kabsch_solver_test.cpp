@@ -1,6 +1,4 @@
-#include <catch2/catch_test_macros.hpp>
-#include <catch2/catch_approx.hpp>
-#include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include "test_framework.h"
 
 #include <spacecal/core/calibration_solver.h>
 
@@ -8,7 +6,7 @@
 #include <cmath>
 
 using namespace spacecal;
-using Catch::Matchers::WithinAbs;
+using spacecal::test::WithinAbs;
 
 namespace {
 
@@ -49,36 +47,35 @@ std::vector<Sample> generateKnownTransformSamples(
 
 } // namespace
 
-TEST_CASE("KabschCalibrationSolver basics", "[core][solver]") {
+TEST_CASE("KabschCalibrationSolver starts invalid with zero samples", "[core][solver]") {
     KabschCalibrationSolver solver;
+    REQUIRE_FALSE(solver.isValid());
+    REQUIRE(solver.sampleCount() == 0);
+}
 
-    SECTION("starts invalid with zero samples") {
-        REQUIRE_FALSE(solver.isValid());
-        REQUIRE(solver.sampleCount() == 0);
-    }
+TEST_CASE("KabschCalibrationSolver push and shift samples", "[core][solver]") {
+    KabschCalibrationSolver solver;
+    Pose p;
+    solver.pushSample(Sample(p, p));
+    REQUIRE(solver.sampleCount() == 1);
 
-    SECTION("push and shift samples") {
-        Pose p;
-        solver.pushSample(Sample(p, p));
-        REQUIRE(solver.sampleCount() == 1);
+    solver.pushSample(Sample(p, p));
+    REQUIRE(solver.sampleCount() == 2);
 
-        solver.pushSample(Sample(p, p));
-        REQUIRE(solver.sampleCount() == 2);
+    solver.shiftOldest();
+    REQUIRE(solver.sampleCount() == 1);
 
-        solver.shiftOldest();
-        REQUIRE(solver.sampleCount() == 1);
+    solver.clear();
+    REQUIRE(solver.sampleCount() == 0);
+}
 
-        solver.clear();
-        REQUIRE(solver.sampleCount() == 0);
-    }
-
-    SECTION("clear resets hysteresis count") {
-        Pose p;
-        for (int i = 0; i < 5; i++) solver.pushSample(Sample(p, p));
-        solver.clear();
-        REQUIRE(solver.sampleCount() == 0);
-        REQUIRE_FALSE(solver.isValid());
-    }
+TEST_CASE("KabschCalibrationSolver clear resets hysteresis count", "[core][solver]") {
+    KabschCalibrationSolver solver;
+    Pose p;
+    for (int i = 0; i < 5; i++) solver.pushSample(Sample(p, p));
+    solver.clear();
+    REQUIRE(solver.sampleCount() == 0);
+    REQUIRE_FALSE(solver.isValid());
 }
 
 TEST_CASE("KabschCalibrationSolver identity calibration", "[core][solver]") {
@@ -289,7 +286,7 @@ TEST_CASE("KabschCalibrationSolver - A.5 tuned thresholds accept wider range", "
     // AxisVarianceThreshold = 0.0005 (was 0.001)
     // Verify the constant has the tuned value.
     REQUIRE(KabschCalibrationSolver::AxisVarianceThreshold < 0.001);
-    REQUIRE(KabschCalibrationSolver::AxisVarianceThreshold == Catch::Approx(0.0005));
+    REQUIRE(KabschCalibrationSolver::AxisVarianceThreshold == test::Approx(0.0005));
 
     // classifyQuality thresholds: Excellent < 0.003, Good < 0.008, etc.
     REQUIRE(classifyQuality(0.002, true) == CalibrationQuality::Excellent);
@@ -350,15 +347,14 @@ TEST_CASE("classifyQuality thresholds match new tuned values", "[core][types]") 
 
 TEST_CASE("CalibrationParams defaults match plan", "[core][policy]") {
     CalibrationParams p;
-    REQUIRE(p.temporalDecayHalfLife == Catch::Approx(5.0));
-    REQUIRE(p.outlierMadMultiplier  == Catch::Approx(3.0));
+    REQUIRE(p.temporalDecayHalfLife == test::Approx(5.0));
+    REQUIRE(p.outlierMadMultiplier  == test::Approx(3.0));
     REQUIRE(p.hysteresisStableCount == 3);
-    REQUIRE(p.hysteresisAdoptThreshold == Catch::Approx(0.7));
+    REQUIRE(p.hysteresisAdoptThreshold == test::Approx(0.7));
     REQUIRE(p.slidingWindowK == 20);
-    REQUIRE(p.tickIntervalSeconds == Catch::Approx(0.05));
-    REQUIRE(p.continuousRmsThreshold == Catch::Approx(0.010));
-    REQUIRE(p.maxRmsError == Catch::Approx(0.05));
-    REQUIRE(p.maxRotationalRmsError == Catch::Approx(0.05));
-    REQUIRE(p.continuousRotationalRmsThreshold == Catch::Approx(0.02));
+    REQUIRE(p.tickIntervalSeconds == test::Approx(0.05));
+    REQUIRE(p.continuousRmsThreshold == test::Approx(0.010));
+    REQUIRE(p.maxRmsError == test::Approx(0.05));
+    REQUIRE(p.maxRotationalRmsError == test::Approx(0.05));
+    REQUIRE(p.continuousRotationalRmsThreshold == test::Approx(0.02));
 }
-

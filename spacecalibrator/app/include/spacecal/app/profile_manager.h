@@ -78,7 +78,7 @@ private:
 };
 
 /**
- * JSON profile serializer using picojson-compatible format.
+ * JSON profile serializer using the legacy profile file format.
  */
 class JsonProfileSerializer : public IProfileSerializer {
 public:

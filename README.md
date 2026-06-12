@@ -44,7 +44,17 @@ You can calibrate without using the dashboard overlay by unminimizing Space Cali
 
 ### Compiling your own build
 
-Open `OpenVR-SpaceCalibrator.sln` in Visual Studio 2017 and build. There are no external dependencies.
+For the legacy Windows application and SteamVR driver, open `OpenVR-SpaceCalibrator.sln` in Visual Studio 2017 and build.
+
+The refactored `spacecalibrator` libraries and tests use CMake:
+
+```sh
+cmake -S spacecalibrator -B spacecalibrator/build
+cmake --build spacecalibrator/build --parallel
+ctest --test-dir spacecalibrator/build --output-on-failure
+```
+
+CMake uses the vendored Eigen headers by default. Unit tests use the repository's local test harness and do not fetch a test framework during configure.
 
 ### The math
 

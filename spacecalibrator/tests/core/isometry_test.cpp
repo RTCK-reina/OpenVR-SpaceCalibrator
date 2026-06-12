@@ -1,10 +1,9 @@
-#include <catch2/catch_test_macros.hpp>
-#include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include "test_framework.h"
 
 #include <spacecal/core/isometry.h>
 
 using namespace spacecal;
-using Catch::Matchers::WithinAbs;
+using spacecal::test::WithinAbs;
 
 TEST_CASE("IsoTransform default is identity", "[core][isometry]") {
     IsoTransform t;
@@ -41,25 +40,31 @@ TEST_CASE("IsoTransform composition", "[core][isometry]") {
     REQUIRE_THAT(result.y(), WithinAbs(1.0, 1e-10));
 }
 
-TEST_CASE("IsoTransform interpolateAround at extremes", "[core][isometry]") {
+TEST_CASE("IsoTransform interpolateAround lerp=0 gives a", "[core][isometry]") {
     IsoTransform a(Eigen::Vector3d(0, 0, 0));
     IsoTransform b(Eigen::Vector3d(10, 0, 0));
     Eigen::Vector3d pivot(0, 0, 0);
 
-    SECTION("lerp=0 gives a") {
-        auto result = a.interpolateAround(0.0, b, pivot);
-        REQUIRE(result.translation.isApprox(a.translation, 1e-10));
-    }
+    auto result = a.interpolateAround(0.0, b, pivot);
+    REQUIRE(result.translation.isApprox(a.translation, 1e-10));
+}
 
-    SECTION("lerp=1 gives b") {
-        auto result = a.interpolateAround(1.0, b, pivot);
-        REQUIRE(result.translation.isApprox(b.translation, 1e-10));
-    }
+TEST_CASE("IsoTransform interpolateAround lerp=1 gives b", "[core][isometry]") {
+    IsoTransform a(Eigen::Vector3d(0, 0, 0));
+    IsoTransform b(Eigen::Vector3d(10, 0, 0));
+    Eigen::Vector3d pivot(0, 0, 0);
 
-    SECTION("lerp=0.5 gives midpoint for pure translation") {
-        auto result = a.interpolateAround(0.5, b, pivot);
-        REQUIRE_THAT(result.translation.x(), WithinAbs(5.0, 1e-10));
-    }
+    auto result = a.interpolateAround(1.0, b, pivot);
+    REQUIRE(result.translation.isApprox(b.translation, 1e-10));
+}
+
+TEST_CASE("IsoTransform interpolateAround lerp=0.5 gives midpoint for pure translation", "[core][isometry]") {
+    IsoTransform a(Eigen::Vector3d(0, 0, 0));
+    IsoTransform b(Eigen::Vector3d(10, 0, 0));
+    Eigen::Vector3d pivot(0, 0, 0);
+
+    auto result = a.interpolateAround(0.5, b, pivot);
+    REQUIRE_THAT(result.translation.x(), WithinAbs(5.0, 1e-10));
 }
 
 TEST_CASE("operator* with point", "[core][isometry]") {

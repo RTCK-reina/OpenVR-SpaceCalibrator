@@ -1,10 +1,9 @@
-#include <catch2/catch_test_macros.hpp>
-#include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include "test_framework.h"
 
 #include <spacecal/core/pose_averager.h>
 
 using namespace spacecal;
-using Catch::Matchers::WithinAbs;
+using spacecal::test::WithinAbs;
 
 TEST_CASE("PoseAverager with identical poses", "[core][averager]") {
     Eigen::Quaterniond rot(Eigen::AngleAxisd(0.5, Eigen::Vector3d::UnitY()));
