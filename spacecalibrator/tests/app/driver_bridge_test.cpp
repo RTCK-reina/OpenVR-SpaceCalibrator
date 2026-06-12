@@ -1,4 +1,4 @@
-#include <catch2/catch_test_macros.hpp>
+#include "test_framework.h"
 
 #include <spacecal/app/driver_bridge.h>
 #include <spacecal/protocol/messages.h>

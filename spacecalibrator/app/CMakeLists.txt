@@ -10,8 +10,6 @@ add_library(spacecal_app
 target_include_directories(spacecal_app
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../lib   # picojson.h
 )
 
 target_link_libraries(spacecal_app
